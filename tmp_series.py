@@ -96,7 +96,7 @@ if __name__=='__main__':
 
         try:
             if "-dense" in sys.argv:
-                x_input = tmplib.dense_segments_2_in_3d_tree_dependent(tree, tmplib.Density, tmplib.Pos, tmplib.__sample_size__//3, rloc=tmplib.__rloc__)
+                x_input = tmplib.dense_segments_in_3d_tree_dependent(tree, tmplib.Density, tmplib.Pos, tmplib.__sample_size__, rloc=tmplib.__rloc__)
             elif tmplib.FLAG3 in sys.argv:
                 print(f"Flag {tmplib.FLAG3} was used, therefore Random Variable $X_r \sim U_1$",flush = True)
                 x_input    = tmplib.weighted_in_3d_tree_dependent(tree, tmplib.Density, tmplib.__sample_size__, rloc=0.5, n_crit=tmplib.__dense_cloud__)   
@@ -113,8 +113,8 @@ if __name__=='__main__':
             print(f"[Snap] snap {tmplib.snap}: skipping", flush=True)
             tmplib.config_arepo(filename, center, True)
             continue
+
         print(x_input.shape)
-        """
 
         dist, cells, rel_pos = tmplib.find_points_and_relative_positions(x_input, tmplib.Pos, tmplib.VoronoiPos)
         sample_dens = tmplib.Density[cells]
@@ -127,6 +127,8 @@ if __name__=='__main__':
         ax.set_yscale("log")
         plt.show()
         plt.close(fig)
+        continue
+        """
 
         mask = tmplib.Pos[:,0]*tmplib.Pos[:,0] + tmplib.Pos[:,1]*tmplib.Pos[:,1]+tmplib.Pos[:,2]*tmplib.Pos[:,2] < 0.1
 
