@@ -98,6 +98,8 @@ def config_arepo(filename, center, close = False):
     if "snap" not in globals():
         global snap, __Boxsize__, Pos, Density, Mass
         global Volume, VoronoiPos, Bfield, data
+        global MagneticFieldDivergence
+
         
     if close:
         data.close()
@@ -106,6 +108,8 @@ def config_arepo(filename, center, close = False):
     snap = int(filename.split('.')[0][-3:])
     data = h5py.File(filename, 'r')
     __Boxsize__ = data['Header'].attrs['BoxSize']
+
+    MagneticFieldDivergence = np.asarray(data['PartType0']['MagneticFieldDivergence'], dtype=FloatType)
 
     # units solar mass, parsec and km/s
     Pos = np.asarray(data['PartType0']['CenterOfMass'], dtype=FloatType)
@@ -259,6 +263,40 @@ def dense_segments_in_3d_tree_dependent(tree, Density, Pos, no_per_seg, rloc=1.0
     return sample
 
 
+@timing
+def dense_segments_2_in_3d_tree_dependent(tree, Density, Pos, no_per_seg, rloc=1.0, floor=100.0):
+
+    print("Each section has a sample size of: ", no_per_seg)
+
+    sphere = Pos[:,0]*Pos[:,0] + Pos[:,1]*Pos[:,1] + Pos[:,2]*Pos[:,2] < rloc*rloc
+    if np.all(Density[sphere] < 1.0e+6):
+        print("No Densities above 1.0e+6 cm-3")
+        return None
+
+    n_inner_boundary = np.max(Density[sphere])
+
+    samples = []
+    sample_dens = []
+
+    while n_inner_boundary > floor:
+        n_outer_boundary = max(10**(np.log10(n_inner_boundary) - 2), floor)
+
+        n_above_boundary = np.logical_and(Density > n_outer_boundary, Density < n_inner_boundary)
+        mask = np.logical_and(n_above_boundary, sphere)
+
+        cell_centers = Pos[mask,:]
+        cell_densities = Density[mask]
+
+        idx = np.random.choice(len(cell_centers), size=no_per_seg, replace=False)
+        samples.append(cell_centers[idx])
+        sample_dens.append(cell_densities[idx])
+
+        n_inner_boundary = n_outer_boundary
+
+    sample = np.concatenate(samples, axis=0)
+    sample_dens = np.concatenate(sample_dens, axis=0)
+
+    return sample
 
 @timing
 def weighted_in_3d_tree_dependent(tree, Density, no, rloc=1.0, n_crit=1.0e+2):

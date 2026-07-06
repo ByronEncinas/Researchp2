@@ -96,7 +96,7 @@ if __name__=='__main__':
 
         try:
             if "-dense" in sys.argv:
-                x_input = tmplib.dense_segments_in_3d_tree_dependent(tree, tmplib.Density, tmplib.Pos, tmplib.__sample_size__//3, rloc=tmplib.__rloc__)
+                x_input = tmplib.dense_segments_2_in_3d_tree_dependent(tree, tmplib.Density, tmplib.Pos, tmplib.__sample_size__//3, rloc=tmplib.__rloc__)
             elif tmplib.FLAG3 in sys.argv:
                 print(f"Flag {tmplib.FLAG3} was used, therefore Random Variable $X_r \sim U_1$",flush = True)
                 x_input    = tmplib.weighted_in_3d_tree_dependent(tree, tmplib.Density, tmplib.__sample_size__, rloc=0.5, n_crit=tmplib.__dense_cloud__)   
@@ -115,6 +115,7 @@ if __name__=='__main__':
             continue
         print(x_input.shape)
         """
+
         dist, cells, rel_pos = tmplib.find_points_and_relative_positions(x_input, tmplib.Pos, tmplib.VoronoiPos)
         sample_dens = tmplib.Density[cells]
 
@@ -126,7 +127,6 @@ if __name__=='__main__':
         ax.set_yscale("log")
         plt.show()
         plt.close(fig)
-
 
         mask = tmplib.Pos[:,0]*tmplib.Pos[:,0] + tmplib.Pos[:,1]*tmplib.Pos[:,1]+tmplib.Pos[:,2]*tmplib.Pos[:,2] < 0.1
 
@@ -219,12 +219,18 @@ if __name__=='__main__':
         print(np.sum(survivors)/survivors.shape[0], " Survivor fraction", flush=True)
 
         if "-dense" in sys.argv:
+
+            _dist_, cells, _rel_pos_ = tmplib.find_points_and_relative_positions(x_input, tmplib.Pos, tmplib.VoronoiPos)
+            
+            NormDivB = tmplib.MagneticFieldDivergence[cells] * (np.cbrt(3 * tmplib.Volume[cells] / (4*np.pi)))   / np.linalg.norm(tmplib.Bfield[cells,:], axis=1)
+
             survivors_fraction[each] = np.sum(survivors)/survivors.shape[0]
+            magnetic_fields *= tmplib.gauss_code_to_gauss_cgs # Gauss CGS
+
             #u_input         = x_input[np.logical_not(survivors),:] # pc
             #x_input         = x_input [survivors,:]                 # pc
             #radius_vectors  = radius_vectors[:, survivors, :]      # pc
             #numb_densities  = numb_densities[:, survivors]         # cm-3
-            magnetic_fields *= tmplib.gauss_code_to_gauss_cgs # Gauss CGS
             #mean_column     = mean_column[survivors]               # cm-2
             #median_column   = median_column[survivors]             # cm-2
             #path_column     = path_column[survivors]               # cm-2
@@ -241,6 +247,7 @@ if __name__=='__main__':
                 "time": _time, 
                 "surv_mask": survivors,
                 "x_input": x_input,
+                "norm_divb": NormDivB,
                 "n_rs": n_rs,
                 "B_rs": B_rs,
                 "n_path": path_column,
@@ -253,7 +260,7 @@ if __name__=='__main__':
 
             df_stats[str(tmplib.snap)]  = stats_dict
 
-        else:
+        elif (tmplib.FLAG0 not in sys.argv):
             survivors_fraction[each] = np.sum(survivors)/survivors.shape[0]
             u_input         = x_input[np.logical_not(survivors),:] # pc
             x_input         = x_input[survivors,:]                 # pc
@@ -269,41 +276,56 @@ if __name__=='__main__':
             r_u             = r_u[survivors]                       # Adim
             r_l             = r_l[survivors]                       # Adim
 
+            #_dist_, cells, _rel_pos_ = tmplib.find_points_and_relative_positions(x_input, tmplib.Pos, tmplib.VoronoiPos)
+            #NormDivB = tmplib.MagneticFieldDivergence[cells] * 3 * tmplib.Volume[cells] / (4*np.pi)  / np.linalg.norm(tmplib.Bfield[cells], axis=1)
+
+            stats_dict = {
+                "time": _time, 
+                "x_input": x_input,
+                #"norm_divb": NormDivB,
+                "n_rs": n_rs,
+                "B_rs": B_rs,
+                "n_path": path_column,
+                "n_los0": mean_column,
+                "n_los1": median_column,
+                "surv_fraction": survivors_fraction[each],
+                "r_u": r_u,
+                "r_l": r_l
+            }
+
+            df_stats[str(tmplib.snap)]  = stats_dict
 
 
-            mean_r_u, median_r_u, skew_r_u, kurt_r_u = tmplib.describes(r_u)
-            mean_r_l, median_r_l, skew_r_l, kurt_r_l = tmplib.describes(r_l)
+        mean_r_u, median_r_u, skew_r_u, kurt_r_u = tmplib.describes(r_u)
+        mean_r_l, median_r_l, skew_r_l, kurt_r_l = tmplib.describes(r_l)
+        
+        if tmplib.FLAG0 in sys.argv: # -lin
+    
+            _dist_, cells, _rel_pos_ = tmplib.find_points_and_relative_positions(x_input, tmplib.Pos, tmplib.VoronoiPos)
+        
+            NormDivB = tmplib.MagneticFieldDivergence[cells] * 3 * tmplib.Volume[cells] / (4*np.pi)  / np.linalg.norm(tmplib.Bfield[cells], axis=1)
+
+            survivors_fraction[each] = np.sum(survivors)/survivors.shape[0]
+            magnetic_fields *= tmplib.gauss_code_to_gauss_cgs # Gauss CGS
+
+            field_dict = {
+                "time": _time, 
+                "surv_mask": survivors,
+                "x_input": x_input,
+                "n_rs": n_rs,
+                "B_rs": B_rs,
+                "norm_divb": NormDivB,
+                "directions": directions,
+                "B_s": magnetic_fields,
+                "r_s": radius_vectors,
+                "n_s": numb_densities,
+                "surv_fraction": survivors_fraction[each],
+            }
+            print(field_dict.keys())
             
-            if tmplib.FLAG0 in sys.argv: # -l
-                field_dict = {
-                    "time": _time,
-                    "directions": directions,
-                    "u_input": u_input,
-                    "x_input": x_input,
-                    "B_s": magnetic_fields,
-                    "r_s": radius_vectors,
-                    "n_s": numb_densities
-                }
+            #df_fields[str(tmplib.snap)]  = field_dict
+            df_stats[str(tmplib.snap)]  = field_dict
 
-                #df_fields[str(tmplib.snap)]  = field_dict
-                df_stats[str(tmplib.snap)]  = field_dict
-            else:
-                stats_dict = {
-                    "time": _time, 
-                    "u_input": u_input,
-                    "x_input": x_input,
-                    "n_rs": n_rs,
-                    "n_us": n_us,
-                    "B_rs": B_rs,
-                    "n_path": path_column,
-                    "n_los0": mean_column,
-                    "n_los1": median_column,
-                    "surv_fraction": survivors_fraction[each],
-                    "r_u": r_u,
-                    "r_l": r_l
-                }
-
-                df_stats[str(tmplib.snap)]  = stats_dict
 
         if 'Pos' in globals():
             print("\nPos is global", flush=True)
