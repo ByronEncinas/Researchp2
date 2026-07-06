@@ -115,7 +115,7 @@ if __name__=='__main__':
             continue
 
         print(x_input.shape)
-
+        """
         dist, cells, rel_pos = tmplib.find_points_and_relative_positions(x_input, tmplib.Pos, tmplib.VoronoiPos)
         sample_dens = tmplib.Density[cells]
 
@@ -128,7 +128,7 @@ if __name__=='__main__':
         plt.show()
         plt.close(fig)
         continue
-        """
+
 
         mask = tmplib.Pos[:,0]*tmplib.Pos[:,0] + tmplib.Pos[:,1]*tmplib.Pos[:,1]+tmplib.Pos[:,2]*tmplib.Pos[:,2] < 0.1
 
