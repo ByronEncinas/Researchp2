@@ -364,11 +364,13 @@ def crs_path(*args, **kwargs):
     line      = np.zeros((__alloc_slots__+1,m,3)) # from __alloc_slots__+1 elements to the double, since it propagates forward and backward
     bfields   = np.zeros((__alloc_slots__+1,m))
     densities = np.zeros((__alloc_slots__+1,m))
+    norm_div_b= np.zeros((__alloc_slots__+1,m))
     pst_mask = np.zeros((m,)).astype(int) # one value for each
 
     line_rev=np.zeros((__alloc_slots__+1,m,3)) # from __alloc_slots__+1 elements to the double, since it propagates forward and backward
     bfields_rev = np.zeros((__alloc_slots__+1,m))
     densities_rev = np.zeros((__alloc_slots__+1,m))
+    norm_div_b_rev = np.zeros((__alloc_slots__+1,m))
     pst_mask_rev = np.zeros((m,)).astype(int) # one value for each
 
     line[0,:,:]     = x_init
@@ -452,7 +454,6 @@ def crs_path(*args, **kwargs):
 
             k += 1
         
-
     print(np.logical_not((np.any(mask2_rev) and (k_rev + 1 < __alloc_slots__))), np.logical_not((np.any(mask2) and (k + 1 < __alloc_slots__))))
     #threshold = threshold.astype(int)
 

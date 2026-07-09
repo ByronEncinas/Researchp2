@@ -96,7 +96,7 @@ if __name__=='__main__':
 
         try:
             if "-dense" in sys.argv:
-                x_input = tmplib.dense_segments_in_3d_tree_dependent(tree, tmplib.Density, tmplib.Pos, tmplib.__sample_size__, rloc=tmplib.__rloc__)
+                x_input = tmplib.dense_segments_in_3d_tree_dependent(tree, tmplib.Density, tmplib.Pos, tmplib.__sample_size__//3, rloc=tmplib.__rloc__)
             elif tmplib.FLAG3 in sys.argv:
                 print(f"Flag {tmplib.FLAG3} was used, therefore Random Variable $X_r \sim U_1$",flush = True)
                 x_input    = tmplib.weighted_in_3d_tree_dependent(tree, tmplib.Density, tmplib.__sample_size__, rloc=0.5, n_crit=tmplib.__dense_cloud__)   
@@ -215,41 +215,33 @@ if __name__=='__main__':
         r_u, n_rs, B_rs, survivors2 = tmplib.eval_reduction(magnetic_fields, numb_densities, follow_index, 1.0e+2)
         r_l, _1, _2, _3 = tmplib.eval_reduction(magnetic_fields, numb_densities, follow_index, 1.0e+1)
 
-        
         survivors = np.logical_and(survivors1, survivors2)
 
         print(np.sum(survivors)/survivors.shape[0], " Survivor fraction", flush=True)
 
         if "-dense" in sys.argv:
 
-            _dist_, cells, _rel_pos_ = tmplib.find_points_and_relative_positions(x_input, tmplib.Pos, tmplib.VoronoiPos)
+            #_dist_, cells, _rel_pos_ = tmplib.find_points_and_relative_positions(x_input, tmplib.Pos, tmplib.VoronoiPos)
+            NormDivB = np.zeros_like(radius_vectors[0,:,0])
+            NormDivDensity = np.zeros_like(radius_vectors[0,:,0])
+            for k in range(radius_vectors.shape[1]):
+                _dist_, cells, _rel_pos_ = tmplib.find_points_and_relative_positions(radius_vectors[:,k,:], tmplib.Pos, tmplib.VoronoiPos)
+                value = tmplib.MagneticFieldDivergence[cells] * (np.cbrt(3 * tmplib.Volume[cells] / (4*np.pi)))   / np.linalg.norm(tmplib.Bfield[cells,:], axis=1)
+                NormDivB[k] = np.max(value)
+                NormDivDensity[k] = tmplib.Density[np.argmax(value)]
             
-            NormDivB = tmplib.MagneticFieldDivergence[cells] * (np.cbrt(3 * tmplib.Volume[cells] / (4*np.pi)))   / np.linalg.norm(tmplib.Bfield[cells,:], axis=1)
-
             survivors_fraction[each] = np.sum(survivors)/survivors.shape[0]
             magnetic_fields *= tmplib.gauss_code_to_gauss_cgs # Gauss CGS
 
-            #u_input         = x_input[np.logical_not(survivors),:] # pc
-            #x_input         = x_input [survivors,:]                 # pc
-            #radius_vectors  = radius_vectors[:, survivors, :]      # pc
-            #numb_densities  = numb_densities[:, survivors]         # cm-3
-            #mean_column     = mean_column[survivors]               # cm-2
-            #median_column   = median_column[survivors]             # cm-2
-            #path_column     = path_column[survivors]               # cm-2
-            #n_us            = n_rs[np.logical_not(survivors)]     # cm-3
-            #n_rs            = n_rs[survivors]                      # cm-3
-            #B_rs            = B_rs[survivors]*tmplib.gauss_code_to_gauss_cgs # Gauss CGS
-            #r_u             = r_u[survivors]                       # Adim
-            #r_l             = r_l[survivors]                       # Adim
-
             mean_r_u, median_r_u, skew_r_u, kurt_r_u = tmplib.describes(r_u)
             mean_r_l, median_r_l, skew_r_l, kurt_r_l = tmplib.describes(r_l)
-            
+
             stats_dict = {
                 "time": _time, 
                 "surv_mask": survivors,
                 "x_input": x_input,
                 "norm_divb": NormDivB,
+                "norm_divn": NormDivDensity,
                 "n_rs": n_rs,
                 "B_rs": B_rs,
                 "n_path": path_column,
