@@ -208,9 +208,11 @@ def dense_segments_in_3d_tree_dependent(tree, Density, Pos, no_per_seg, rloc=1.0
     print("Each section has a sample size of: ", no_per_seg)
 
     sphere = Pos[:,0]*Pos[:,0] + Pos[:,1]*Pos[:,1]+Pos[:,2]*Pos[:,2] < rloc*rloc
-    if np.all(Density[sphere] < 1.0e+6):
+    if (np.max(Density[sphere]) < 1.0e+6):
         print("No Densities above 1.0e+6 cm-3")
         return None
+    print(f"Max density in r = {rloc} pc: ", np.max(Density[sphere]), flush=True)
+    print(f"Min density in r = {rloc} pc: ", np.min(Density[sphere]), flush=True)
     n_inner_boundary = np.max(Density[sphere])
     n_outer_boundary = 10**(np.log10(n_inner_boundary )- 2) # assuming max of Density is not < 2
 
