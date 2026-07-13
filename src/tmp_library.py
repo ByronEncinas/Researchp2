@@ -9,7 +9,7 @@ import warnings
 from scipy.spatial import cKDTree
 from copy import deepcopy
 from scipy.stats import kurtosis, skew
-
+from collections import Counter
 # cache-ing spatial.cKDTree(Pos[:]).query(x, k=1)
 _cached_tree = None
 _cached_pos = None
@@ -31,7 +31,7 @@ def find_points_and_get_fields(x, Bfield, Density, Pos, VoronoiPos):
 	abs_local_fields = np.sqrt(np.sum(local_fields**2,axis=1))
 	return local_fields, abs_local_fields, local_densities, cells
 
-def Heun_step(x, dx, Bfield, Density, Pos, VoronoiPos, Volume, bdirection=None):
+def Heun_step(x, dx, Bfield, Density, Pos, VoronoiPos, Volume, bdirection=None, retrieve_cells = False):
 
     # campo en x, mangitud campo en x, densidad en x y ID de la celda
     local_fields_1, abs_local_fields_1, local_densities, cells = find_points_and_get_fields(
@@ -58,7 +58,10 @@ def Heun_step(x, dx, Bfield, Density, Pos, VoronoiPos, Volume, bdirection=None):
 
     x_final = x + 0.5 * scaled_dx[:, np.newaxis] * (local_fields_1 + local_fields_2)
 
-    return x_final, abs_local_fields_1, local_densities, CellVol
+    if retrieve_cells:
+        return x_final, abs_local_fields_1, local_densities, CellVol, cells
+    else:
+        return x_final, abs_local_fields_1, local_densities, CellVol
 
 mean_molecular_weight_ism = 2.35  # mean molecular weight of the ISM (Wilms, 2000)
 density_code_to_nuclei_cm3 = 6.02214076e+23 / (2.35) * 6.771194847794873e-23  # Wilms, 2000 ; Padovani, 2018 ism mean molecular weight is # conversion from g/cm^3 to nuclei/cm^3
@@ -200,19 +203,83 @@ def timing(func):
         return result
     return wrapper
 
+def count_cell_reentries(cell_indices, max_gap=50):
+    # max_gap is the space between oscillations for which we add them
+    #cell indices for a magnetic field line
+    cells = list(cell_indices)
+    if not cells:
+        return {}
+    #starts a dictonary to keep track of the visits, for example 
+    # For example:
+
+    #   [10, 10, 20, 20, 10]
+    #   becomes:
+    #   {
+    #       10: [(0, 1), (4, 4)],
+    #       20: [(2, 3)]
+    #   }
+    
+    visits = {}
+    visit_start = 0
+    #iterate for all the cells indexes 
+    for step in range(1, len(cells)):
+        #if the cell index is not the same as the previous one, so that steps in the same field line are not considered to be visits
+        if cells[step] != cells[step - 1]:
+            visits.setdefault(cells[step - 1], []).append(
+                (visit_start, step - 1)
+            )
+            visit_start = step
+    visits.setdefault(cells[-1], []).append((visit_start, len(cells) - 1))
+
+    #dictionary for the reentry counts
+    reentry_counts = {}
+    for cell_id, intervals in visits.items():
+        best_count = 0
+        current_count = 0
+
+        for previous, current in zip(intervals, intervals[1:]):
+            if current[0] - previous[1] <= max_gap:
+                current_count += 1
+                best_count = max(best_count, current_count)
+            else:
+                current_count = 0
+
+        if best_count:
+            reentry_counts[cell_id] = best_count
+
+    return reentry_counts
+
+def detect_oscillating_line(cell_indices, threshold=20, max_gap=50):
+    reentry_counts = count_cell_reentries(cell_indices, max_gap=max_gap)
+    return any(count >= threshold for count in reentry_counts.values())
+
 @timing
 def dense_segments_in_3d_tree_dependent(tree, Density, Pos, no_per_seg, rloc=1.0):
 
+
     # selected a randome sample of 1 k  for range 10^10 - 10^14
 
-    print("Each section has a sample size of: ", no_per_seg)
-
     sphere = Pos[:,0]*Pos[:,0] + Pos[:,1]*Pos[:,1]+Pos[:,2]*Pos[:,2] < rloc*rloc
-    if (np.max(Density[sphere]) < 1.0e+6):
-        print("No Densities above 1.0e+6 cm-3")
+
+    cellsAboveDensity = np.sum(Density[sphere] > 1.0e+2)
+
+    print(cellsAboveDensity, np.log10(cellsAboveDensity))
+
+    if (np.log10(cellsAboveDensity) < 3):
+        print(f"Log of Cells in Core = ", np.log10(cellsAboveDensity), flush=True)
+        print(f"Not enough cells to create a meaningful sample {sphere.shape[0] }")
         return None
+
+    max_den_snap = np.max(Density[sphere])
+    min_den_snap = min(np.min(Density[sphere]), 100)
+
+    if (np.max(Density[sphere]) < 1.0e+2):
+        print("No Densities above 1.0e+2 cm-3")
+        return None
+    
     print(f"Max density in r = {rloc} pc: ", np.max(Density[sphere]), flush=True)
     print(f"Min density in r = {rloc} pc: ", np.min(Density[sphere]), flush=True)
+
     n_inner_boundary = np.max(Density[sphere])
     n_outer_boundary = 10**(np.log10(n_inner_boundary )- 2) # assuming max of Density is not < 2
 
@@ -366,14 +433,15 @@ def crs_path(*args, **kwargs):
     line      = np.zeros((__alloc_slots__+1,m,3)) # from __alloc_slots__+1 elements to the double, since it propagates forward and backward
     bfields   = np.zeros((__alloc_slots__+1,m))
     densities = np.zeros((__alloc_slots__+1,m))
-    norm_div_b= np.zeros((__alloc_slots__+1,m))
     pst_mask = np.zeros((m,)).astype(int) # one value for each
-
+    
     line_rev=np.zeros((__alloc_slots__+1,m,3)) # from __alloc_slots__+1 elements to the double, since it propagates forward and backward
     bfields_rev = np.zeros((__alloc_slots__+1,m))
     densities_rev = np.zeros((__alloc_slots__+1,m))
-    norm_div_b_rev = np.zeros((__alloc_slots__+1,m))
     pst_mask_rev = np.zeros((m,)).astype(int) # one value for each
+
+    cells_for = np.zeros((__alloc_slots__+1,m))
+    cells_rev = np.zeros((__alloc_slots__+1,m))
 
     line[0,:,:]     = x_init
     line_rev[0,:,:] = x_init 
@@ -381,6 +449,8 @@ def crs_path(*args, **kwargs):
     x = x_init.copy()
 
     dummy, bfields[0,:], densities[0,:], cells = find_points_and_get_fields(x, Bfield, Density, Pos, VoronoiPos)
+
+    cells_for[0, :] = cells
 
     vol = Volume[cells]
     #densities[0,:] = densities[0,:] * gr_cm3_to_nuclei_cm3
@@ -394,6 +464,8 @@ def crs_path(*args, **kwargs):
 
     dummy_rev, bfields_rev[0,:], densities_rev[0,:], cells = find_points_and_get_fields(x_rev, Bfield, Density, Pos, VoronoiPos)
 
+    cells_rev[0, :] = cells
+
     vol_rev = Volume[cells]
 
     #densities_rev[0,:] = densities_rev[0,:] * gr_cm3_to_nuclei_cm3
@@ -405,6 +477,8 @@ def crs_path(*args, **kwargs):
     mask2_rev = dens > n_crit
     un_masked2_rev = np.logical_not(mask2_rev)
 
+    print(cells_rev.shape, cells_for.shape)
+
     #while np.any(mask2) or np.any(mask2_rev): 
     while np.any(mask2) and (k + 1 < __alloc_slots__) or np.any(mask2_rev) and (k_rev + 1 < __alloc_slots__):
 
@@ -415,16 +489,20 @@ def crs_path(*args, **kwargs):
         
             x_rev_aux = x_rev[mask2_rev]
 
-            x_rev_aux, bfield_aux_rev, dens_aux_rev, vol_rev = Heun_step(x_rev_aux, -1.0, Bfield, Density, Pos, VoronoiPos, Volume)
+            x_rev_aux, bfield_aux_rev, dens_aux_rev, vol_rev, cells = Heun_step(x_rev_aux, -1.0, Bfield, Density, Pos, VoronoiPos, Volume, retrieve_cells = True)
             #dens_aux_rev = dens_aux_rev * gr_cm3_to_nuclei_cm3
             
             x_rev[mask2_rev] = x_rev_aux
             dens_rev[mask2_rev] = dens_aux_rev
             pst_mask_rev[mask2_rev] = bool(1)
 
+
             x_rev[un_masked2_rev] = 0
             dens_rev[un_masked2_rev] = 0
             pst_mask_rev[un_masked2_rev] = bool(0)
+
+            cells_rev[k_rev+1,mask2_rev] = cells
+            cells_rev[k_rev+1,un_masked2_rev] = -1
             
             #print(" alive lines? ",  np.any(mask2_rev), "k_rev + 1 < __alloc_slots__: ", k_rev + 1 < __alloc_slots__)
 
@@ -440,12 +518,16 @@ def crs_path(*args, **kwargs):
         if np.any(mask2) and (k + 1 < __alloc_slots__):
 
             x_aux = x[mask2]
-            x_aux, bfield_aux, dens_aux, vol = Heun_step(x_aux, 1.0, Bfield, Density, Pos, VoronoiPos, Volume)
+            x_aux, bfield_aux, dens_aux, vol, cells = Heun_step(x_aux, 1.0, Bfield, Density, Pos, VoronoiPos, Volume, retrieve_cells = True)
             #dens_aux = dens_aux * gr_cm3_to_nuclei_cm3
             
             x[mask2]                   = x_aux
             dens[mask2]                = dens_aux
             pst_mask[mask2]            = bool(1)
+
+            cells_for[k+1,mask2] = cells
+            cells_for[k+1,un_masked2]      = -1
+
             x[un_masked2]              = 0
             dens[un_masked2]           = 0
             pst_mask[un_masked2]       = bool(0)
@@ -463,32 +545,68 @@ def crs_path(*args, **kwargs):
 
     percentage_of_survivors = np.sum(survivors_mask)*100/survivors_mask.shape[0]
 
-    print("Percentage of Survivors: ", percentage_of_survivors, " %")
-    print("k = ", k, " k_rev = ", k_rev)
+    print("Percentage of Survivors at crs_path: ", percentage_of_survivors, " %", flush=True)
+    print("k = ", k, " k_rev = ", k_rev, flush=True)
     
     nz_i    = k + 1
     nz_irev = k_rev + 1
     
-    print(f"get_lines => threshold index for {__threshold__}cm-3: ", nz_i, nz_irev)
-    print(f"get_lines => original shapes ({2*__alloc_slots__+1} to {nz_i + nz_irev - 1})")
-    print(f"get_lines => p_r = {__alloc_slots__+1} to p_r = {nz_irev} for array with shapes ...")
+    print(f"get_lines => threshold index for {__threshold__}cm-3: ", nz_i, nz_irev, flush=True)
+    print(f"get_lines => original shapes ({2*__alloc_slots__+1} to {nz_i + nz_irev - 1})", flush=True)
+    print(f"get_lines => p_r = {__alloc_slots__+1} to p_r = {nz_irev} for array with shapes ...", flush=True)
 
-    radius_vectors = np.append(line_rev[:nz_irev,:,:][::-1, :, :], line[1:nz_i,:,:], axis=0)
-    magnetic_fields = np.append(bfields_rev[:nz_irev,:][::-1, :], bfields[1:nz_i,:], axis=0)
-    numb_densities = np.append(densities_rev[:nz_irev,:][::-1, :], densities[1:nz_i,:], axis=0)
+    radius_vectors   = np.append(line_rev[:nz_irev,:,:][::-1, :, :], line[1:nz_i,:,:], axis=0)
+    magnetic_fields  = np.append(bfields_rev[:nz_irev,:][::-1, :], bfields[1:nz_i,:], axis=0)
+    numb_densities   = np.append(densities_rev[:nz_irev,:][::-1, :], densities[1:nz_i,:], axis=0)
+    cells_arr        = np.append(cells_rev[:nz_irev,:][::-1, :], cells_for[1:nz_i,:], axis=0)
 
-    #__alloc_slots__ = magnetic_fields.shape[0]
+    for j in range(cells_arr.shape[1]): # must be shape (2*N + 1, m)
 
-    print("Radius vector shape:", radius_vectors.shape)
+        cell_indices = cells_arr[:, j]
+        remove_negatives = np.where(cell_indices > -1)[0]
+        first, last = remove_negatives[0], remove_negatives[-1]
+        
+        val = detect_oscillating_line(cell_indices[first: last + 1], threshold=10, max_gap=50)
+        # if val is True - then didnt survived
+        survivors_mask[j] = not val
+    
+    if False:
+        # find field lines with recurring cycles along the trajectory
+        for file in glob.glob("./lines/*.png"):
+            os.remove(file)
+            
+        print("Cells array shape", cells_arr.shape, flush=True)
+        for j in range(cells_arr.shape[1]): # must be shape (2*N + 1, m)
+
+            cell_indices = cells_arr[:, j]
+            remove_negatives = np.where(cell_indices > -1)[0]
+            first, last = remove_negatives[0], remove_negatives[-1]
+
+            suv = survivors_mask[j]
+
+            val = detect_oscillating_line(cell_indices[first: last + 1], threshold=10, max_gap=50)
+            print(f"field line {j} is oscilating/survivor?", val, suv, flush=True)
+
+            if val:
+                fig, ax = plt.subplots()
+                ax.plot(magnetic_fields[first: last + 1, j])
+                plt.title(f"oscilating/survivor? {val}, {suv}")
+                plt.savefig(f"./lines/maglinesosc{j}.png")
+                plt.close(fig)
+            else:
+                fig, ax = plt.subplots()
+                ax.plot(magnetic_fields[first: last + 1, j])
+                plt.title(f"oscilating/survivor? {val}, {suv}")
+                plt.savefig(f"./lines/maglinessurv{j}.png")
+                plt.close(fig)
+
+    print("Radius vector shape:", radius_vectors.shape, flush=True)
 
     m = magnetic_fields.shape[1]
-
-    #* 3.086e+18                                # from Parsec to cm
-    #* (1.99e+33/(3.086e+18*100_000.0))**(-1/2) # in Gauss (cgs)
     
-    path_column   = np.sum(numb_densities[1:, :] * np.linalg.norm(np.diff(radius_vectors, axis=0), axis=2), axis=0) *pc_to_cm
+    path_column   = np.sum(numb_densities[1:, :] * np.linalg.norm(np.diff(radius_vectors, axis=0), axis=2), axis=0) * pc_to_cm
 
-    return radius_vectors, magnetic_fields, numb_densities, nz_irev, path_column, survivors_mask #p_r #, [threshold, threshold2, threshold_rev, threshold2_rev]
+    return radius_vectors, magnetic_fields, numb_densities, nz_irev, path_column, survivors_mask#p_r #, [threshold, threshold2, threshold_rev, threshold2_rev]
 
 @timing
 def line_of_sight(*args, **kwargs):
@@ -949,7 +1067,7 @@ def eval_reduction(field, numb, follow_index, threshold):
         index_pocket, field_pocket = pocket[0], pocket[1]
         flag = False
         p_i = np.searchsorted(index_pocket, p_r)
-        from collections import Counter
+
         most_common_value, count = Counter(bfield10.ravel()) .most_common(1)[0]
     
         if count > 20:

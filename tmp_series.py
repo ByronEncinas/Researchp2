@@ -115,7 +115,7 @@ if __name__=='__main__':
             continue
 
         print(x_input.shape)
-        """
+
         dist, cells, rel_pos = tmplib.find_points_and_relative_positions(x_input, tmplib.Pos, tmplib.VoronoiPos)
         sample_dens = tmplib.Density[cells]
 
@@ -129,7 +129,7 @@ if __name__=='__main__':
         plt.close(fig)
         continue
 
-
+        """
         mask = tmplib.Pos[:,0]*tmplib.Pos[:,0] + tmplib.Pos[:,1]*tmplib.Pos[:,1]+tmplib.Pos[:,2]*tmplib.Pos[:,2] < 0.1
 
         x_input =  tmplib.Pos[mask,:]
@@ -184,9 +184,7 @@ if __name__=='__main__':
         print(np.log10(np.max(tmplib.Density)))
         continue
 
-        """
-
-        
+        """        
         directions=tmplib.fibonacci_sphere(20) # dodecahedron (12 faces), and icosahedron (20 faces)
         try:
             #__0, __1, mean_column, median_column = tmplib.line_of_sight(x_init=x_input, directions=directions, n_crit=tmplib.__threshold__)
@@ -198,8 +196,7 @@ if __name__=='__main__':
             print(f"{e}", flush=True)
             continue
 
-        tmplib.__threshold__ = 10
-
+        #tmplib.__threshold__ = 10
         try:
             radius_vectors, magnetic_fields, numb_densities, follow_index, path_column, survivors1 = tmplib.crs_path(x_init=x_input, n_crit=tmplib.__threshold__)
             assert np.any(numb_densities > tmplib.__threshold__), f"No values above threshold {tmplib.__threshold__} cm-3"
@@ -224,11 +221,14 @@ if __name__=='__main__':
             #_dist_, cells, _rel_pos_ = tmplib.find_points_and_relative_positions(x_input, tmplib.Pos, tmplib.VoronoiPos)
             NormDivB = np.zeros_like(radius_vectors[0,:,0])
             NormDivDensity = np.zeros_like(radius_vectors[0,:,0])
+            #NormDivPos = np.zeros_like(radius_vectors[0,:,0])
             for k in range(radius_vectors.shape[1]):
                 _dist_, cells, _rel_pos_ = tmplib.find_points_and_relative_positions(radius_vectors[:,k,:], tmplib.Pos, tmplib.VoronoiPos)
                 value = tmplib.MagneticFieldDivergence[cells] * (np.cbrt(3 * tmplib.Volume[cells] / (4*np.pi)))   / np.linalg.norm(tmplib.Bfield[cells,:], axis=1)
-                NormDivB[k] = np.max(value)
-                NormDivDensity[k] = tmplib.Density[np.argmax(value)]
+                arg_max = np.argmax(value)
+                
+                NormDivB[k] = value[arg_max]
+                NormDivDensity[k] = tmplib.Density[arg_max]
             
             survivors_fraction[each] = np.sum(survivors)/survivors.shape[0]
             magnetic_fields *= tmplib.gauss_code_to_gauss_cgs # Gauss CGS
@@ -364,22 +364,23 @@ if __name__=='__main__':
     comm.Barrier()
     if rank == 0:
         expected = comm.Get_size()
-        
+
         if "HOSTNAME" in list(os.environ.keys()):
-            os.makedirs(f"/work/bjencinasvelaz/series/{_id_}/", exist_ok=True)
-            asyncio.run(tmplib.merge_and_save(_id_, tmplib.__dense_cloud__, f"/work/bjencinasvelaz/series/{_id_}/"))
+            outdir = f"/work/bjencinasvelaz/series/{_id_}"
+            os.makedirs(outdir, exist_ok=True)
+            asyncio.run(tmplib.merge_and_save(_id_, tmplib.__dense_cloud__, outdir))
         else:
-            if (tmplib.FLAG1 in sys.argv): # -all or -exp
-                os.makedirs(f"./series/{_id_}/", exist_ok=True)
-                asyncio.run(tmplib.merge_and_save(_id_, tmplib.__dense_cloud__, f"./series/{_id_}"))
-            elif tmplib.FLAG0 in sys.argv:
-                os.makedirs(f"./lines", exist_ok=True)
-                asyncio.run(tmplib.merge_and_save(_id_, tmplib.__dense_cloud__, "./lines"))
+            if tmplib.FLAG0 in sys.argv:  # -lin
+                outdir = "./lines"
+                os.makedirs(outdir, exist_ok=True)
+                asyncio.run(tmplib.merge_and_save(_id_, tmplib.__dense_cloud__, outdir))
+            else:  # -exp or -weight
+                outdir = f"./series/{_id_}"
+                os.makedirs(outdir, exist_ok=True)
+                asyncio.run(tmplib.merge_and_save(_id_, tmplib.__dense_cloud__, outdir))
 
     elapsed_time =time.time() - start_time
     hours = int(elapsed_time // 3600)
     minutes = int((elapsed_time % 3600) // 60)
     seconds = int(elapsed_time % 60)
-
-    print(f"Elapsed time: {hours}h {minutes}m {seconds}s")
     
