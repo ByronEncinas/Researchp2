@@ -256,9 +256,7 @@ def detect_oscillating_line(cell_indices, threshold=20, max_gap=50):
 @timing
 def dense_segments_in_3d_tree_dependent(tree, Density, Pos, no_per_seg, rloc=1.0):
 
-
     # selected a randome sample of 1 k  for range 10^10 - 10^14
-
     sphere = Pos[:,0]*Pos[:,0] + Pos[:,1]*Pos[:,1]+Pos[:,2]*Pos[:,2] < rloc*rloc
 
     cellsAboveDensity = np.sum(Density[sphere] > 1.0e+2)
@@ -270,66 +268,56 @@ def dense_segments_in_3d_tree_dependent(tree, Density, Pos, no_per_seg, rloc=1.0
         print(f"Not enough cells to create a meaningful sample {sphere.shape[0] }")
         return None
 
-    max_den_snap = np.max(Density[sphere])
-    min_den_snap = min(np.min(Density[sphere]), 100)
-
     if (np.max(Density[sphere]) < 1.0e+2):
         print("No Densities above 1.0e+2 cm-3")
         return None
+
+    max_den_snap = np.max(Density[sphere])
+    min_den_snap = min(np.min(Density[sphere]), 100)
+    no_step = 5
+    width_step = (np.log10(max_den_snap)- np.log10(min_den_snap)) / no_step
+    no_per_seg = no_per_seg // no_step
     
     print(f"Max density in r = {rloc} pc: ", np.max(Density[sphere]), flush=True)
     print(f"Min density in r = {rloc} pc: ", np.min(Density[sphere]), flush=True)
 
-    n_inner_boundary = np.max(Density[sphere])
-    n_outer_boundary = 10**(np.log10(n_inner_boundary )- 2) # assuming max of Density is not < 2
+    for window in range(5):
+        if window == 0:
+            n_top_boundary = max_den_snap #np.max(Density[sphere])
+            n_bottom_boundary = 10**(np.log10(max_den_snap) - width_step * (window+1))#10**(np.log10(n_top_boundary )- 2) # assuming max of Density is not < 2
+        else:
+            n_top_boundary = 10**(np.log10(max_den_snap) - width_step * (window))
+            n_bottom_boundary = 10**(np.log10(max_den_snap) - width_step * (window+1)) #10**(np.log10(n_top_boundary )- 2) # assuming max of Density is not < 2
+        
+        print(np.log10(n_top_boundary), np.log10(n_bottom_boundary))
+        n_above_boundary = np.logical_and(Density > n_bottom_boundary, Density < n_top_boundary) 
+        mask = np.logical_and(n_above_boundary, sphere)
 
-    n_above_boundary = np.logical_and(Density > n_outer_boundary, Density < n_inner_boundary) 
-    mask = np.logical_and(n_above_boundary, sphere)
+        cell_centers = Pos[mask,:]
+        cell_densities = Density[mask]
 
-    cell_centers = Pos[mask,:]
-    cell_densities = Density[mask]
+        #sample1 = np.random.choice(cell_centers, size=1000, replace=False)
+        try:
+            idx = np.random.choice(len(cell_centers), size=no_per_seg + 1, replace=False)
+            sample = cell_centers[idx]
+            sample_dens = cell_densities[idx]
+        except:
+            # ValueError: Cannot take a larger sample than population when 'replace=False'
+            # then take call
+            sample = cell_centers
+            sample_dens = cell_densities
 
-    #sample1 = np.random.choice(cell_centers, size=1000, replace=False)
-    idx = np.random.choice(len(cell_centers), size=no_per_seg + 1, replace=False)
-    sample1 = cell_centers[idx]
-    sample_dens1 = cell_densities[idx]
-    # selected a randome sample of 1 k  for range 10^8 - 10^10
-    
-    n_inner_boundary = n_outer_boundary #1.0e+10
-    n_outer_boundary = 10**(np.log10(n_outer_boundary) - 2)#1.0e+8
 
-    sphere = Pos[:,0]*Pos[:,0] + Pos[:,1]*Pos[:,1]+Pos[:,2]*Pos[:,2] < rloc*rloc
-    n_above_boundary = np.logical_and(Density > n_outer_boundary, Density < n_inner_boundary) 
-    mask = np.logical_and(n_above_boundary, sphere)
+        if window == 0:
+            new_sample = np.concatenate([sample], axis=0)
+            new_sample_dens = np.concatenate([sample_dens], axis=0)
+            continue
 
-    cell_centers = Pos[mask,:]
-    cell_densities = Density[mask]
+        new_sample = np.concatenate([new_sample, sample], axis=0)
+        new_sample_dens = np.concatenate([new_sample_dens, sample_dens], axis=0)
 
-    #sample2 = np.random.choice(cell_centers, size=1000, replace=False)
-    idx = np.random.choice(len(cell_centers), size=no_per_seg, replace=False)
-    sample2 = cell_centers[idx]
-    sample_dens2 = cell_densities[idx]
 
-    # selected a randome sample of 1 k  for range 10^8 - 10^10
-    n_inner_boundary = n_outer_boundary #1.0e+10
-    n_outer_boundary = 10**(np.log10(n_outer_boundary) - 2)#1.0e+8
-
-    sphere = Pos[:,0]*Pos[:,0] + Pos[:,1]*Pos[:,1]+Pos[:,2]*Pos[:,2] < rloc*rloc
-    n_above_boundary = np.logical_and(Density > n_outer_boundary, Density < n_inner_boundary) 
-    mask = np.logical_and(n_above_boundary, sphere)
-
-    cell_centers = Pos[mask,:]
-    cell_densities = Density[mask]
-
-    #sample2 = np.random.choice(cell_centers, size=1000, replace=False)
-    idx = np.random.choice(len(cell_centers), size=no_per_seg, replace=False)
-    sample3 = cell_centers[idx]
-    sample_dens3 = cell_densities[idx]
-
-    sample = np.concatenate([sample1, sample2, sample3], axis=0)
-    sample_dens = np.concatenate([sample_dens1, sample_dens2, sample_dens3], axis=0)
-
-    return sample
+    return new_sample
 
 @timing
 def weighted_in_3d_tree_dependent(tree, Density, no, rloc=1.0, n_crit=1.0e+2):
