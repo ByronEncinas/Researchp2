@@ -263,13 +263,13 @@ def dense_segments_in_3d_tree_dependent(tree, Density, Pos, no_per_seg, rloc=1.0
 
     print(cellsAboveDensity, np.log10(cellsAboveDensity))
 
-    if (np.log10(cellsAboveDensity) < 3):
+    if (np.log10(cellsAboveDensity) < 2):
         print(f"Log of Cells in Core = ", np.log10(cellsAboveDensity), flush=True)
-        print(f"Not enough cells to create a meaningful sample {sphere.shape[0] }")
+        print(f"Not enough cells to create a meaningful sample {sphere.shape[0] }", flush=True)
         return None
 
     if (np.max(Density[sphere]) < 1.0e+2):
-        print("No Densities above 1.0e+2 cm-3")
+        print("No Densities above 1.0e+2 cm-3", flush=True)
         return None
 
     max_den_snap = np.max(Density[sphere])
@@ -288,6 +288,8 @@ def dense_segments_in_3d_tree_dependent(tree, Density, Pos, no_per_seg, rloc=1.0
         else:
             n_top_boundary = 10**(np.log10(max_den_snap) - width_step * (window))
             n_bottom_boundary = 10**(np.log10(max_den_snap) - width_step * (window+1)) #10**(np.log10(n_top_boundary )- 2) # assuming max of Density is not < 2
+            if n_bottom_boundary < 100:
+                n_bottom_boundary = 100
         
         print(np.log10(n_top_boundary), np.log10(n_bottom_boundary))
         n_above_boundary = np.logical_and(Density > n_bottom_boundary, Density < n_top_boundary) 
@@ -296,7 +298,6 @@ def dense_segments_in_3d_tree_dependent(tree, Density, Pos, no_per_seg, rloc=1.0
         cell_centers = Pos[mask,:]
         cell_densities = Density[mask]
 
-        #sample1 = np.random.choice(cell_centers, size=1000, replace=False)
         try:
             idx = np.random.choice(len(cell_centers), size=no_per_seg + 1, replace=False)
             sample = cell_centers[idx]
@@ -316,6 +317,8 @@ def dense_segments_in_3d_tree_dependent(tree, Density, Pos, no_per_seg, rloc=1.0
         new_sample = np.concatenate([new_sample, sample], axis=0)
         new_sample_dens = np.concatenate([new_sample_dens, sample_dens], axis=0)
 
+        if n_bottom_boundary < 100:
+            break
 
     return new_sample
 
@@ -548,6 +551,8 @@ def crs_path(*args, **kwargs):
     numb_densities   = np.append(densities_rev[:nz_irev,:][::-1, :], densities[1:nz_i,:], axis=0)
     cells_arr        = np.append(cells_rev[:nz_irev,:][::-1, :], cells_for[1:nz_i,:], axis=0)
 
+    cells_oscilation_mask = np.zeros_like(survivors_mask)
+
     for j in range(cells_arr.shape[1]): # must be shape (2*N + 1, m)
 
         cell_indices = cells_arr[:, j]
@@ -556,7 +561,8 @@ def crs_path(*args, **kwargs):
         
         val = detect_oscillating_line(cell_indices[first: last + 1], threshold=10, max_gap=50)
         # if val is True - then didnt survived
-        survivors_mask[j] = not val
+        #survivors_mask[j] = not val
+        cells_oscilation_mask[j] = val
     
     if False:
         # find field lines with recurring cycles along the trajectory
@@ -594,7 +600,7 @@ def crs_path(*args, **kwargs):
     
     path_column   = np.sum(numb_densities[1:, :] * np.linalg.norm(np.diff(radius_vectors, axis=0), axis=2), axis=0) * pc_to_cm
 
-    return radius_vectors, magnetic_fields, numb_densities, nz_irev, path_column, survivors_mask#p_r #, [threshold, threshold2, threshold_rev, threshold2_rev]
+    return radius_vectors, magnetic_fields, numb_densities, nz_irev, path_column, survivors_mask, cells_oscilation_mask#p_r #, [threshold, threshold2, threshold_rev, threshold2_rev]
 
 @timing
 def line_of_sight(*args, **kwargs):
@@ -1009,11 +1015,10 @@ def eval_reduction(field, numb, follow_index, threshold):
 
     _, m = field.shape
 
-    flag = False
     filter_mask = np.ones(m).astype(bool)
-    dead = 0
-    for i in range(m):
 
+
+    for i in range(m):
         mask10 = np.where(numb[:, i] > threshold)[0]
         if mask10.size > 0:
             start, end = mask10[0], mask10[-1]
@@ -1024,11 +1029,14 @@ def eval_reduction(field, numb, follow_index, threshold):
                     p_r = follow_index - start
                     B_r = bfield10[p_r]
                     n_r = numb10[p_r]
-                except IndexError:
+                    _, index_array = np.unique(numb10, return_inverse=True)
+                    is_oscilating = detect_oscillating_line(index_array, threshold=10, max_gap=50)
+
+                except (IndexError, ValueError):
                     raise ValueError(f"\nTrying to slice beyond bounds for column {i}. "
                                     f"start={start}, end={end}, shape={numb.shape}")
             else:
-                print(f"\n[Info] follow_index {follow_index} outside threshold interval for column {i}.")
+                print(f"\n[Info] follow_index {follow_index} outside threshold interval for column {i}.", flush=True)
                 if follow_index >= numb.shape[0]:
                     raise ValueError(f"follow_index {follow_index} is out of bounds for shape {numb.shape}")
                 numb10   = np.array([numb[follow_index, i]])
@@ -1036,16 +1044,13 @@ def eval_reduction(field, numb, follow_index, threshold):
                 p_r = 0
                 B_r = bfield10[p_r]
                 n_r = numb10[p_r]
+                is_oscilating = False
         else:
-            print(f"\n[Info] No densities > {threshold} cm-3 found for column {i}. Using follow_index fallback.")
-            if follow_index >= numb.shape[0]:
-                raise ValueError(f"\nfollow_index {follow_index} is out of bounds for shape {numb.shape}")
-            numb10   = np.array([numb[follow_index, i]])
-            bfield10 = np.array([field[follow_index, i]])
-            p_r = 0
-            B_r = bfield10[p_r]
-            n_r = numb10[p_r]
-
+            print(f"\n[Info] No densities > {threshold} cm-3 found for column {i}. Using follow_index fallback.", flush=True)
+            raise ValueError(f"\nfollow_index {follow_index} is out of bounds for shape {numb.shape}")
+            
+        filter_mask[i] = is_oscilating
+        
         #print("p_r: ", p_r)
         if not (0 <= p_r < bfield10.shape[0]):
             raise IndexError(f"\np_r={p_r} is out of bounds for bfield10 of length {len(bfield10)}")
@@ -1053,20 +1058,18 @@ def eval_reduction(field, numb, follow_index, threshold):
         # pockets with density threshold of 10cm-3
         pocket, global_info = pocket_finder(bfield10, numb10, p_r, plot=False)
         index_pocket, field_pocket = pocket[0], pocket[1]
-        flag = False
         p_i = np.searchsorted(index_pocket, p_r)
 
         most_common_value, count = Counter(bfield10.ravel()) .most_common(1)[0]
     
-        if count > 20:
-            R = 1.
-            #print(f"Most common value: {most_common_value} (appears {count} times): R = ", R)
-            R10.append(R)
-            Numb100.append(n_r)
-            B100.append(B_r)   
-            flag = True
-            filter_mask[i] = False
-            dead +=1
+        filter_mask[i] = is_oscilating
+
+        # if oscilating => unphysical values
+        if is_oscilating:
+            R = 1
+            R10.append(1)
+            Numb100.append(1)
+            B100.append(1)   
             continue     
 
         try:
@@ -1074,30 +1077,27 @@ def eval_reduction(field, numb, follow_index, threshold):
             B_l = min([bfield10[closest_values[0]], bfield10[closest_values[1]]])
             B_h = max([bfield10[closest_values[0]], bfield10[closest_values[1]]])
             # YES! 
-            success = True  
-        except:
-            # NO :c
+        except (IndexError, ValueError):
+            # Single Point
             R = 1.
             R10.append(R)
             Numb100.append(n_r)
             B100.append(B_r)
-            success = False 
             continue
 
-        if success:
-            # Ok, our point is between local maxima, is inside a pocket?
-            if B_r / B_l < 1:
-                # double YES!
-                R = 1. - np.sqrt(1 - B_r / B_l)
-                R10.append(R)
-                Numb100.append(n_r)
-                B100.append(B_r)
-            else:
-                # NO!
-                R = 1.
-                R10.append(R)
-                Numb100.append(n_r)
-                B100.append(B_r)
+        # Ok, our point is between local maxima, is inside a pocket?
+        if B_r / B_l < 1:
+            # double YES!
+            R = 1. - np.sqrt(1 - B_r / B_l)
+            R10.append(R)
+            Numb100.append(n_r)
+            B100.append(B_r)
+        else:
+            # NO!
+            R = 1.
+            R10.append(R)
+            Numb100.append(n_r)
+            B100.append(B_r)
 
     filter_mask = filter_mask.astype(bool)
 

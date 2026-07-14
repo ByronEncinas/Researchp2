@@ -112,9 +112,9 @@ if __name__=='__main__':
             print(f"[Snap] snap {tmplib.snap}: skipping", flush=True)
             tmplib.config_arepo(filename, center, True)
             continue
-        """
         print(x_input.shape)
 
+        """
         dist, cells, rel_pos = tmplib.find_points_and_relative_positions(x_input, tmplib.Pos, tmplib.VoronoiPos)
         sample_dens = tmplib.Density[cells]
 
@@ -127,7 +127,6 @@ if __name__=='__main__':
         plt.show()
         plt.close(fig)
         continue
-
 
         mask = tmplib.Pos[:,0]*tmplib.Pos[:,0] + tmplib.Pos[:,1]*tmplib.Pos[:,1]+tmplib.Pos[:,2]*tmplib.Pos[:,2] < 0.1
 
@@ -182,8 +181,7 @@ if __name__=='__main__':
         sam.gkde_plt(x_input, _id_+str(tmplib.snap))
         print(np.log10(np.max(tmplib.Density)))
         continue
-
-        """        
+        """    
         directions=tmplib.fibonacci_sphere(20) # dodecahedron (12 faces), and icosahedron (20 faces)
         try:
             #__0, __1, mean_column, median_column = tmplib.line_of_sight(x_init=x_input, directions=directions, n_crit=tmplib.__threshold__)
@@ -197,7 +195,7 @@ if __name__=='__main__':
 
         #tmplib.__threshold__ = 10
         try:
-            radius_vectors, magnetic_fields, numb_densities, follow_index, path_column, survivors1 = tmplib.crs_path(x_init=x_input, n_crit=tmplib.__threshold__)
+            radius_vectors, magnetic_fields, numb_densities, follow_index, path_column, survivors_mask, cells_oscilation_mask = tmplib.crs_path(x_init=x_input, n_crit=tmplib.__threshold__)
             assert np.any(numb_densities > tmplib.__threshold__), f"No values above threshold {tmplib.__threshold__} cm-3"
         except Exception as e:
             warnings.warn(f"[snap={tmplib.snap}]", RuntimeWarning)
@@ -207,11 +205,13 @@ if __name__=='__main__':
 
         print("__alloc_slots__: ", tmplib.__alloc_slots__, flush=True)
         print("__used_slots__ : ",__0.shape, flush=True)
-
+        
         r_u, n_rs, B_rs, survivors2 = tmplib.eval_reduction(magnetic_fields, numb_densities, follow_index, 1.0e+2)
-        r_l, _1, _2, _3 = tmplib.eval_reduction(magnetic_fields, numb_densities, follow_index, 1.0e+1)
+        #r_l, _1, _2, _3 = tmplib.eval_reduction(magnetic_fields, numb_densities, follow_index, 1.0e+1)
+        r_l = r_u.copy()
 
-        survivors = np.logical_and(survivors1, survivors2)
+        survivors = survivors = np.logical_and(~cells_oscilation_mask.astype(bool), survivors_mask.astype(bool))
+        survivors = np.logical_and(survivors, survivors2)
 
         print(np.sum(survivors)/survivors.shape[0], " Survivor fraction", flush=True)
 
@@ -220,27 +220,37 @@ if __name__=='__main__':
             #_dist_, cells, _rel_pos_ = tmplib.find_points_and_relative_positions(x_input, tmplib.Pos, tmplib.VoronoiPos)
             NormDivB = np.zeros_like(radius_vectors[0,:,0])
             NormDivDensity = np.zeros_like(radius_vectors[0,:,0])
+            NormDivVolumes = np.zeros_like(radius_vectors[0,:,0])
+            NormDivFields = np.zeros_like(radius_vectors[0,:,0])
             #NormDivPos = np.zeros_like(radius_vectors[0,:,0])
             for k in range(radius_vectors.shape[1]):
                 _dist_, cells, _rel_pos_ = tmplib.find_points_and_relative_positions(radius_vectors[:,k,:], tmplib.Pos, tmplib.VoronoiPos)
-                value = tmplib.MagneticFieldDivergence[cells] * (np.cbrt(3 * tmplib.Volume[cells] / (4*np.pi)))   / np.linalg.norm(tmplib.Bfield[cells,:], axis=1)
+                value = tmplib.MagneticFieldDivergence[cells] #* (np.cbrt(3 * tmplib.Volume[cells] / (4*np.pi)))  / np.linalg.norm(tmplib.Bfield[cells,:], axis=1)
                 arg_max = np.argmax(value)
-                
+                NormDivVolumes[k] = tmplib.Volume[cells][arg_max]
+                NormDivFields[k]  = np.linalg.norm(tmplib.Bfield[cells,:][arg_max,:], axis=0) 
                 NormDivB[k] = value[arg_max]
-                NormDivDensity[k] = tmplib.Density[arg_max]
+                NormDivDensity[k] = tmplib.Density[cells][arg_max]
             
+
             survivors_fraction[each] = np.sum(survivors)/survivors.shape[0]
             magnetic_fields *= tmplib.gauss_code_to_gauss_cgs # Gauss CGS
 
             mean_r_u, median_r_u, skew_r_u, kurt_r_u = tmplib.describes(r_u)
             mean_r_l, median_r_l, skew_r_l, kurt_r_l = tmplib.describes(r_l)
+            
+            # survivors_mask, cells_oscilation_mask
 
             stats_dict = {
                 "time": _time, 
-                "surv_mask": survivors,
+                "cells_oscilation_mask": cells_oscilation_mask,
+                "never_ending_mask": survivors_mask,
+                "eval_reduction_mask": survivors2, # must be equal to cells_oscilation_mask
                 "x_input": x_input,
                 "norm_divb": NormDivB,
                 "norm_divn": NormDivDensity,
+                "norm_divfield": NormDivFields,
+                "norm_divvolume": NormDivVolumes,
                 "n_rs": n_rs,
                 "B_rs": B_rs,
                 "n_path": path_column,
@@ -325,7 +335,8 @@ if __name__=='__main__':
 
         tmplib.get_globals_memory()            
         # at the end of the loop, drop all that will be reasigned, to avoid memory overflow
-        del tree, __0, __1, _1, _2, _3
+        del tree, __0, __1
+        #del _1, _2, _3
         del radius_vectors, magnetic_fields, numb_densities
 
         gc.collect()
