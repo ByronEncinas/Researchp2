@@ -229,7 +229,7 @@ def calc_distance(r, b, n, jth=""):
         
         #mk0 = b[:, k] > 0        
         mk0 = n[:, k] > 0
-        aux = np.where(n[:, k] > 3 * 10**2)
+        aux = np.where(n[:, k] >  10**2)
         bk = b[aux[0][0]:aux[0][-1],k]
         if (np.sum(aux) == 0):
             continue
@@ -351,8 +351,8 @@ for index, file in enumerate(files[::-1]):
         "dens"   : data["n"]
     }
     for i, t in enumerate(data["t"]):
-        calc_distance(data["r"][i],data["B"][i],data["n"][i], f"profile-{i}-{ID}")
-        proj_plot(data["r"][i],data["B"][i],data["n"][i], f"projplt-{i}-{ID}")
+        #calc_distance(data["r"][i],data["B"][i],data["n"][i], f"profile-{i}-{ID}")
+        #proj_plot(data["r"][i],data["B"][i],data["n"][i], f"projplt-{i}-{ID}")
         fieldstructure(data["r"][i], data["B"][i], out = ID + f"fieldtop-{i}-{ID}")
 
     if index == 0:

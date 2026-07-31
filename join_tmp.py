@@ -10,9 +10,9 @@ async def merge_and_save(abspath, identifier):
     _id_            = identifier[1:]
     
     loop = asyncio.get_event_loop()
-
-    stat_files = sorted(glob.glob(f'{abspath}/*/tmp_{_id_}_rank*.pkl'))
     print(f'{abspath}/tmp_{_id_}_rank*.pkl')
+
+    stat_files = sorted(glob.glob(f'{abspath}/tmp_{_id_}_rank*.pkl'))
     print(stat_files)
 
     if stat_files == []:
@@ -45,9 +45,6 @@ async def merge_and_save(abspath, identifier):
     for f in stat_files:
         #os.remove(f)
         print(f)
-
-if len(sys.argv):
-    print(sys.argv[1:])
 
 tmp_abspath = sys.argv[1]  # tmp/
 identifier  = sys.argv[2]  # 6i0

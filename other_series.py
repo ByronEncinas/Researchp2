@@ -101,7 +101,6 @@ def compute_reduction_factor_in_parallel(centers: np.array, snaps: np.array, fil
 
         directions=mcls.fibonacci_sphere(20)        # dodecahedron (12 faces), and icosahedron (20 faces)
         try:
-            print(mcls.__threshold__)
             #__0, __1, mean_column, median_column = mcls.line_of_sight(x_init=x_input, directions=directions, n_crit=mcls.__threshold__)
             __0, __1, mean_column, median_column = mcls.edge_to_p_line_of_sight(x_init=x_input, directions=directions, n_crit=mcls.__threshold__)
         except Exception as e:
@@ -111,7 +110,8 @@ def compute_reduction_factor_in_parallel(centers: np.array, snaps: np.array, fil
             continue
         
         mcls.__threshold__ = 10
-
+        print(mcls.__threshold__)
+        
         try:
             radius_vectors, magnetic_fields, numb_densities, follow_index, path_column, survivors1 = mcls.crs_path(x_init=x_input, n_crit=mcls.__threshold__)
             assert np.any(numb_densities > mcls.__threshold__), f"No values above threshold {mcls.__threshold__} cm-3"

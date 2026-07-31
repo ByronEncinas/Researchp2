@@ -210,7 +210,7 @@ if __name__=='__main__':
         #r_l, _1, _2, _3 = tmplib.eval_reduction(magnetic_fields, numb_densities, follow_index, 1.0e+1)
         r_l = r_u.copy()
 
-        survivors = survivors = np.logical_and(~cells_oscilation_mask.astype(bool), survivors_mask.astype(bool))
+        survivors = np.logical_and(~cells_oscilation_mask.astype(bool), survivors_mask.astype(bool))
         survivors = np.logical_and(survivors, survivors2)
 
         print(np.sum(survivors)/survivors.shape[0], " Survivor fraction", flush=True)
@@ -232,7 +232,6 @@ if __name__=='__main__':
                 NormDivB[k] = value[arg_max]
                 NormDivDensity[k] = tmplib.Density[cells][arg_max]
             
-
             survivors_fraction[each] = np.sum(survivors)/survivors.shape[0]
             magnetic_fields *= tmplib.gauss_code_to_gauss_cgs # Gauss CGS
 

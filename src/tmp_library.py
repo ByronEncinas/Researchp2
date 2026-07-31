@@ -465,7 +465,7 @@ def crs_path(*args, **kwargs):
     k=0
     k_rev=0
 
-    mask2_rev = dens > n_crit
+    mask2_rev = dens_rev > n_crit
     un_masked2_rev = np.logical_not(mask2_rev)
 
     print(cells_rev.shape, cells_for.shape)
@@ -516,8 +516,8 @@ def crs_path(*args, **kwargs):
             dens[mask2]                = dens_aux
             pst_mask[mask2]            = bool(1)
 
-            cells_for[k+1,mask2] = cells
-            cells_for[k+1,un_masked2]      = -1
+            cells_for[k+1,mask2]       = cells
+            cells_for[k+1,un_masked2]  = -1
 
             x[un_masked2]              = 0
             dens[un_masked2]           = 0
@@ -528,6 +528,7 @@ def crs_path(*args, **kwargs):
             densities[k + 1, mask2]    = dens_aux
 
             k += 1
+        print(f"k_rev={k_rev}, sum(pst_mask_rev)={np.sum(pst_mask_rev)}")
         
     print(np.logical_not((np.any(mask2_rev) and (k_rev + 1 < __alloc_slots__))), np.logical_not((np.any(mask2) and (k + 1 < __alloc_slots__))))
     #threshold = threshold.astype(int)
@@ -1066,10 +1067,10 @@ def eval_reduction(field, numb, follow_index, threshold):
 
         # if oscilating => unphysical values
         if is_oscilating:
-            R = 1
-            R10.append(1)
-            Numb100.append(1)
-            B100.append(1)   
+            R = 1.
+            R10.append(R)
+            Numb100.append(n_r)
+            B100.append(B_r)   
             continue     
 
         try:
